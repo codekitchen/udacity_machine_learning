@@ -12208,9 +12208,8 @@ Standard deviation of prices: $165,171.13
 </div>
 <div class="inner_cell">
 <div class="text_cell_render border-box-sizing rendered_html">
-<p><strong>Answer: </strong> It's important to have some set of test data to test the model on after training, so that we can measure how well the model performs on data that it was not explicitly trained on.</p>
-<p>If too much (or all) of the available data is used for training, the model will often be overfit to the training data, meaning it will typically score very high against that same training data but poorly against any other data set. In this scenario the model is basically just "memorizing" the training data and repeating it back.</p>
-<p>The trade-off is that the more data reserved for testing, the smaller the training dataset. This leads to high variance (underfitting), even if the model is complex enough, because it didn't get enough training data to accurately capture all the relationships between features.</p>
+<p><strong>Answer: </strong> Ultimately, we are building a model because we want to use the model to make predictions on new data, where we have the features but do not yet have the true values available. In order to evaluate the model's accuracy, we need a set of test data where we do know the true values. We also need a set of data in this same form for training the model, so the simplest path would be to just use the same set of data for training and testing.</p>
+<p>We split the test data from the training data because if we train with the same data that we test with, we run the risk of overfitting to that specific data. The model may essentially just "memorize" the answers for that data, and parrot them back to us, without really being a good fit for future data. By reserving the test data, we can increase our confidence that the model will perform with the expected accuracy going forward.</p>
 
 </div>
 </div>
@@ -13903,7 +13902,7 @@ For the <code>fit_model</code> function in the code cell below, you will need to
 </div>
 <div class="cell border-box-sizing code_cell rendered">
 <div class="input">
-<div class="prompt input_prompt">In&nbsp;[25]:</div>
+<div class="prompt input_prompt">In&nbsp;[38]:</div>
 <div class="inner_cell">
     <div class="input_area">
 <div class=" highlight hl-ipython2"><pre><span></span><span class="kn">from</span> <span class="nn">sklearn.metrics</span> <span class="kn">import</span> <span class="n">make_scorer</span>
@@ -13919,7 +13918,7 @@ For the <code>fit_model</code> function in the code cell below, you will need to
     <span class="c1"># sklearn versiin 0.17: ShuffleSplit(n, n_iter=10, test_size=0.1, train_size=None, random_state=None)</span>
     <span class="n">cv_sets</span> <span class="o">=</span> <span class="n">ShuffleSplit</span><span class="p">(</span><span class="n">X</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">n_iter</span> <span class="o">=</span> <span class="mi">10</span><span class="p">,</span> <span class="n">test_size</span> <span class="o">=</span> <span class="mf">0.20</span><span class="p">,</span> <span class="n">random_state</span> <span class="o">=</span> <span class="mi">0</span><span class="p">)</span>
 
-    <span class="n">regressor</span> <span class="o">=</span> <span class="n">DecisionTreeRegressor</span><span class="p">()</span>
+    <span class="n">regressor</span> <span class="o">=</span> <span class="n">DecisionTreeRegressor</span><span class="p">(</span><span class="n">random_state</span> <span class="o">=</span> <span class="mi">0</span><span class="p">)</span>
 
     <span class="n">params</span> <span class="o">=</span> <span class="p">{</span> <span class="s1">&#39;max_depth&#39;</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span><span class="mi">11</span><span class="p">)</span> <span class="p">}</span>
 
@@ -13964,7 +13963,7 @@ For the <code>fit_model</code> function in the code cell below, you will need to
 </div>
 <div class="cell border-box-sizing code_cell rendered">
 <div class="input">
-<div class="prompt input_prompt">In&nbsp;[26]:</div>
+<div class="prompt input_prompt">In&nbsp;[39]:</div>
 <div class="inner_cell">
     <div class="input_area">
 <div class=" highlight hl-ipython2"><pre><span></span><span class="c1"># Fit the training data to the model using grid search</span>
@@ -14053,7 +14052,7 @@ For the <code>fit_model</code> function in the code cell below, you will need to
 </div>
 <div class="cell border-box-sizing code_cell rendered">
 <div class="input">
-<div class="prompt input_prompt">In&nbsp;[27]:</div>
+<div class="prompt input_prompt">In&nbsp;[42]:</div>
 <div class="inner_cell">
     <div class="input_area">
 <div class=" highlight hl-ipython2"><pre><span></span><span class="c1"># Produce a matrix for client data</span>
