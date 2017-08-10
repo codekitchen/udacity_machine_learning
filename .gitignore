@@ -2,3 +2,4 @@
 *.pyc
 ud120-projects/
 machine-learning-repo/
+**/.vscode/settings.json
