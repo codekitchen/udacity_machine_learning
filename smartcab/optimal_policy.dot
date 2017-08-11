@@ -1,0 +1,28 @@
+digraph {
+  a[label=inputs.light]
+  a -> green [label=green]
+  green[label=waypoint]
+  a -> red [label=red]
+  red[label=waypoint]
+  
+  green -> gl [label=left]
+  green -> gf [label=forward]
+  green -> gr [label=right]
+  gf[label=forward,shape=box]
+  gr[label=right,shape=box]
+  gl[label=inputs.forward]
+  gl -> stop [label=forward]
+  gl -> stop [label=right]
+  gl -> glstar [label="*"]
+  glstar[label=left,shape=box]
+  
+  red -> stop [label=left]
+  red -> stop [label=forward]
+  red -> rr [label=right]
+  rr [label=inputs.left]
+  rr -> rrgo [label="*"]
+  rrgo [label=right,shape=box]
+  rr -> stop [label=forward]
+  
+  stop[label=None,shape=box]
+}
