@@ -3,3 +3,5 @@
 ud120-projects/
 machine-learning-repo/
 **/.vscode/settings.json
+MNIST_data/
+learning_tensorflow/summary/
