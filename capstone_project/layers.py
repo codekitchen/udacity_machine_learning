@@ -89,5 +89,4 @@ class Memory:
             rows = session.run(
                 ops,
                 {col.gather_indices: indices for col in self.parts})
-            # rows = [row for row in zip(*rows)]
         return rows

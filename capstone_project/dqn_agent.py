@@ -18,29 +18,44 @@ class DQNAgent:
         self.learning_rate = 0.001
         self.batch_size = batch_size
         self.state_dir = state_dir
+        self.memory_size = 1000000
+        self.target_update_frequency = 10000
         self._gamma_value = None
         self._build_model(epsilon=1.0, gamma=0.99)
         self._start_session()
+
+    def _build_network(self):
+        input_layer = tf.placeholder(
+            tf.float32, shape=([None] + self.state_shape), name="input")
+        fc1 = fully_connected(input_layer, 512, name="dense1")
+        predict = fully_connected(fc1, self.action_count,
+                                  activation=None, name="output")
+        return input_layer, predict
 
     def _build_model(self, epsilon, gamma):
         self.graph = tf.Graph()
         with self.graph.as_default():
             self._step = tf.train.create_global_step()
-            self.input_layer = tf.placeholder(
-                tf.float32, shape=([None] + self.state_shape), name="input")
-            fc1 = fully_connected(self.input_layer, 512, name="dense1")
-            self._predict = fully_connected(fc1, self.action_count,
-                                            activation=None, name="output")
+            with tf.variable_scope("network"):
+                self.network = self._build_network()
+            with tf.variable_scope("target_network"):
+                self.target_network = self._build_network()
+                with tf.name_scope("updater"):
+                    tn_vars = self.graph.get_collection(
+                        tf.GraphKeys.TRAINABLE_VARIABLES, scope="target_network/")
+                    updates = [tf.assign(var, self.graph.get_tensor_by_name(
+                        var.name.replace("target_network/", "network/")), name="update_{}".format(var.name.replace("target_network/", "").replace("/", "_").split(":")[0])) for var in tn_vars]
+                    self._update_target_network = tf.group(*updates)
             with tf.variable_scope("training"):
                 self.target = tf.placeholder(
                     tf.float32, shape=[None, self.action_count], name="target")
                 mse = tf.reduce_mean(tf.squared_difference(
-                    self._predict, self.target))
+                    self.network[1], self.target))
                 tf.summary.scalar('mse', mse)
                 self.train_op = tf.train.RMSPropOptimizer(
                     self.learning_rate).minimize(mse, global_step=self._step)
             with tf.variable_scope("memory"):
-                self.memory = Memory(20000, [
+                self.memory = Memory(self.memory_size, [
                     ('state', self.state_shape),
                     ('action', []),
                     ('reward', []),
@@ -64,6 +79,8 @@ class DQNAgent:
             summary_dir = "{}/summary".format(self.state_dir)
             self.writer = tf.summary.FileWriter(summary_dir, self.graph)
             self.session.run(tf.global_variables_initializer())
+            self.session.run(self._update_target_network)
+            self.graph.finalize()
             checkpoint = tf.train.latest_checkpoint(self._snapshot_dir)
             if checkpoint:
                 self.saver.restore(self.session, checkpoint)
@@ -72,16 +89,18 @@ class DQNAgent:
         if self.session:
             self.session.close()
 
-    def predict(self, state: np.ndarray):
+    def predict(self, state: np.ndarray, network):
         """Give propabilities for each action, given `state` and the current model"""
 
-        prediction = self.session.run(
-            self._predict, {self.input_layer: state})
+        prediction = self.session.run(network[1], {network[0]: state})
         return prediction
 
     def fit(self, states, targets):
         args = {}
         step = self.step
+        if step % self.target_update_frequency == 0:
+            self.session.run(self._update_target_network)
+            print("copied network into target_network")
         if step % 1000 == 0:
             snapshot_name = "{}/snap".format(self._snapshot_dir)
             self.saver.save(self.session, snapshot_name, global_step=step)
@@ -90,7 +109,7 @@ class DQNAgent:
                 trace_level=tf.RunOptions.FULL_TRACE)
             args['run_metadata'] = tf.RunMetadata()
         _, summary = self.session.run([self.train_op, self.summary_data],
-                                      {self.input_layer: states,
+                                      {self.network[0]: states,
                                           self.target: targets},
                                       **args)
         if 'run_metadata' in args:
@@ -122,9 +141,7 @@ class DQNAgent:
         if random.random() <= epsilon:
             action = random.randrange(self.action_count)
         else:
-            action = np.argmax(self.predict(state[None, :])[0])
-        # self.session.run(self._epsilon.assign(
-            # max(self.epsilon_min, epsilon * self.epsilon_decay)))
+            action = np.argmax(self.predict(state[None, :], self.network)[0])
         self.session.run(self._epsilon_assign, {self._epsilon_new_val: max(
             self.epsilon_min, epsilon * self.epsilon_decay)})
         return action
@@ -144,10 +161,9 @@ class DQNAgent:
             return
         states = []
         targets = []
-        rows.append(self.predict(rows[0]))
-        rows.append(self.predict(rows[3]))
-        rows = [row for row in zip(*rows)]
-        for state, action, reward, _next_state, done, state_p, next_state_p in rows:
+        rows.append(self.predict(rows[0], self.network))
+        rows.append(self.predict(rows[3], self.target_network))
+        for state, action, reward, _next_state, done, state_p, next_state_p in zip(*rows):
             action = int(action)
             done = bool(done)
             target = reward
@@ -157,5 +173,4 @@ class DQNAgent:
             target_f[action] = target
             states.append(state)
             targets.append(target_f)
-        if len(states) > 0:
-            self.fit(states, targets)
+        self.fit(states, targets)

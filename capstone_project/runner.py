@@ -38,8 +38,8 @@ def main():
             score += reward
             state = next_state
         per_step = (time.time() - st) / step
-        print("episode: {}, time: {}, score: {}, e: {:.2} perstep: {:.2}".format(
-            episode_num, step, score, agent.epsilon, per_step))
+        print("episode: {}, time: {}, score: {}, e: {:.2} step: {}, perstep: {:.2}".format(
+            episode_num, step, score, agent.epsilon, agent.step, per_step))
 
     env.close()
 
