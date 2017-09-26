@@ -38,17 +38,18 @@ class Column:
         self.shape = shape
 
     def build(self, size, index):
-        self._storage = tf.get_variable(
-            self.name, [size] + self.shape, initializer=tf.zeros_initializer, trainable=False)
-        self.remember_value = tf.placeholder(
-            tf.float32, shape=self.shape, name="{}_remember_value".format(self.name))
-        self.remember = tf.scatter_update(
-            self._storage, index, self.remember_value, name="{}_remember".format(self.name))
-        self.gather_indices = tf.placeholder(
-            tf.int64, name="{}_gather_indicies".format(self.name))
-        self.gather = tf.gather(
-            self._storage, self.gather_indices, name="{}_gather".format(self.name))
-        return self
+        with tf.variable_scope(self.name):
+            self._storage = tf.get_variable(
+                "storage", [size] + self.shape, initializer=tf.zeros_initializer, trainable=False)
+            self.remember_value = tf.placeholder(
+                tf.float32, shape=self.shape, name="remember_value")
+            self.remember = tf.scatter_update(
+                self._storage, index, self.remember_value, name="remember")
+            self.gather_indices = tf.placeholder(
+                tf.int64, name="gather_indicies", shape=[None])
+            self.gather = tf.gather(
+                self._storage, self.gather_indices, name="gather")
+            return self
 
 
 class Memory:
@@ -59,15 +60,19 @@ class Memory:
 
     def _build(self):
         self._index = tf.get_variable(
-            "index", [], dtype=tf.int64, initializer=tf.zeros_initializer, trainable=False)
+            "index/index", [], dtype=tf.int64, initializer=tf.zeros_initializer, trainable=False)
         self._count = tf.get_variable(
-            "count", [], dtype=tf.int64, initializer=tf.zeros_initializer, trainable=False)
+            "count/count", [], dtype=tf.int64, initializer=tf.zeros_initializer, trainable=False)
         self.parts = [Column(name, shape).build(self.size, self._index)
                       for (name, shape) in self.shapes]
-        with tf.control_dependencies([col.remember for col in self.parts]):
-            self._bump_index = tf.assign(self._index, tf.mod(self._index + 1, self.size),
-                                         name="bump_index")
-            self._bump_count = tf.assign_add(self._count, 1, name="bump_count")
+        with tf.variable_scope("index"):
+            inc = tf.mod(self._index + 1, self.size)
+            with tf.control_dependencies([col.remember for col in self.parts]):
+                self._bump_index = tf.assign(
+                    self._index, inc, name="bump_index")
+        with tf.variable_scope("count"):
+            self._bump_count = tf.assign_add(
+                self._count, 1, name="bump_count")
 
     def remember(self, session, values):
         ops = [col.remember for col in self.parts] + [
