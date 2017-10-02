@@ -84,14 +84,13 @@ class Memory:
 
     def sample(self, session, batch_size):
         count = int(session.run(self._count))
-        rows = []
         indices = []
+        if count < batch_size:
+            return
         if count >= self.size:
             count = self.size
-        if count >= batch_size:
-            indices = random.sample(range(count), batch_size)
-            ops = [col.gather for col in self.parts]
-            rows = session.run(
-                ops,
-                {col.gather_indices: indices for col in self.parts})
-        return rows
+        indices = random.sample(range(count), batch_size)
+        ops = [col.gather for col in self.parts]
+        return session.run(
+            ops,
+            {col.gather_indices: indices for col in self.parts})

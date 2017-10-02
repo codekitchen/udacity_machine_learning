@@ -19,7 +19,7 @@ class DQNAgent:
         self.batch_size = batch_size
         self.state_dir = state_dir
         self.memory_size = 1000000
-        self.target_update_frequency = 10000
+        self.target_update_frequency = 2000
         self._gamma_value = None
         self._build_model(epsilon=1.0, gamma=0.99)
         self._start_session()
@@ -28,7 +28,8 @@ class DQNAgent:
         input_layer = tf.placeholder(
             tf.float32, shape=([None] + self.state_shape), name="input")
         fc1 = fully_connected(input_layer, 512, name="dense1")
-        predict = fully_connected(fc1, self.action_count,
+        fc2 = fully_connected(fc1, 512, name="dense2")
+        predict = fully_connected(fc2, self.action_count,
                                   activation=None, name="output")
         return input_layer, predict
 
@@ -64,6 +65,7 @@ class DQNAgent:
             with tf.variable_scope("state"):
                 self._epsilon = tf.Variable(
                     epsilon, trainable=False, name="epsilon")
+                tf.summary.scalar('epsilon', self._epsilon)
                 self._epsilon_new_val = tf.placeholder(
                     tf.float32, shape=(), name="epsilon_update_val")
                 self._epsilon_assign = tf.assign(
@@ -157,20 +159,11 @@ class DQNAgent:
 
     def _replay(self):
         rows = self.memory.sample(self.session, self.batch_size)
-        if (len(rows) < 1):
+        if not rows:
             return
-        states = []
-        targets = []
-        rows.append(self.predict(rows[0], self.network))
-        rows.append(self.predict(rows[3], self.target_network))
-        for state, action, reward, _next_state, done, state_p, next_state_p in zip(*rows):
-            action = int(action)
-            done = bool(done)
-            target = reward
-            if not done:
-                target = (reward + self.gamma * np.amax(next_state_p))
-            target_f = state_p
-            target_f[action] = target
-            states.append(state)
-            targets.append(target_f)
-        self.fit(states, targets)
+        states, actions, rewards, next_states, dones = rows
+        pred_states = self.predict(states, self.network)
+        pred_next_states = self.predict(next_states, self.target_network)
+        t_rewards = rewards + (1.0 - dones) * self.gamma * np.amax(pred_next_states, axis=1)
+        pred_states[range(len(pred_states)), actions.astype(int)] = t_rewards
+        self.fit(states, pred_states)
