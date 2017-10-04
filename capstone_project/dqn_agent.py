@@ -4,30 +4,43 @@ import random
 import tensorflow as tf
 import numpy as np
 
-from layers import fully_connected, Memory
+from layers import fully_connected, conv2d, Memory, NpMemory
 
 
 class DQNAgent:
     """A Deep Q-Network learning agent"""
 
-    def __init__(self, state_shape, action_count, batch_size, state_dir):
+    def __init__(self, state_shape, action_count, batch_size, state_dir, image_input):
         self.action_count = action_count
         self.state_shape = list(state_shape)
         self.epsilon_min = 0.01
-        self.epsilon_decay = 0.99991  # 0.9999991
-        self.learning_rate = 0.001
+        self.epsilon_decay = 0.999999  # 0.99991  # 0.9999991
+        self.learning_rate = 0.00025
+        self.replay_start_size = 50000
         self.batch_size = batch_size
         self.state_dir = state_dir
         self.memory_size = 1000000
-        self.target_update_frequency = 2000
+        self.target_update_frequency = 10000
+        self.image_input = image_input
         self._gamma_value = None
+        print("input shape ", self.state_shape)
         self._build_model(epsilon=1.0, gamma=0.99)
         self._start_session()
 
     def _build_network(self):
         input_layer = tf.placeholder(
             tf.float32, shape=([None] + self.state_shape), name="input")
-        fc1 = fully_connected(input_layer, 512, name="dense1")
+        if self.image_input:
+            # conv network to process images
+            conv = conv2d(input_layer, 32, 8, 4, name="conv1")
+            conv = conv2d(conv, 64, 4, 2, name="conv2")
+            if conv.shape[1] > 3:
+                conv = conv2d(conv, 64, 3, 1, name="conv3")
+            flat_shape = np.prod([dim.value for dim in conv.shape[1:]])
+            fc_input = tf.reshape(conv, [-1, flat_shape])
+        else:
+            fc_input = input_layer
+        fc1 = fully_connected(fc_input, 512, name="dense1")
         fc2 = fully_connected(fc1, 512, name="dense2")
         predict = fully_connected(fc2, self.action_count,
                                   activation=None, name="output")
@@ -56,12 +69,13 @@ class DQNAgent:
                 self.train_op = tf.train.RMSPropOptimizer(
                     self.learning_rate).minimize(mse, global_step=self._step)
             with tf.variable_scope("memory"):
-                self.memory = Memory(self.memory_size, [
-                    ('state', self.state_shape),
-                    ('action', []),
-                    ('reward', []),
-                    ('next_state', self.state_shape),
-                    ('done', [])])
+                state_dtype = np.uint8 if self.image_input else np.float32
+                self.memory = NpMemory(self.memory_size, [
+                    ('state', self.state_shape, state_dtype),
+                    ('action', [], np.float32),
+                    ('reward', [], np.float32),
+                    ('next_state', self.state_shape, state_dtype),
+                    ('done', [], np.bool)])
             with tf.variable_scope("state"):
                 self._epsilon = tf.Variable(
                     epsilon, trainable=False, name="epsilon")
@@ -86,6 +100,7 @@ class DQNAgent:
             checkpoint = tf.train.latest_checkpoint(self._snapshot_dir)
             if checkpoint:
                 self.saver.restore(self.session, checkpoint)
+                self.memory = self.memory.restore(checkpoint)
 
     def __del__(self):
         if self.session:
@@ -103,9 +118,12 @@ class DQNAgent:
         if step % self.target_update_frequency == 0:
             self.session.run(self._update_target_network)
             print("copied network into target_network")
-        if step % 1000 == 0:
+        if step % 5000 == 0:
             snapshot_name = "{}/snap".format(self._snapshot_dir)
-            self.saver.save(self.session, snapshot_name, global_step=step)
+            save_path = self.saver.save(
+                self.session, snapshot_name, global_step=step)
+            self.memory.save(save_path)
+            print("saved model")
         if step % 100 == 0:
             args['options'] = tf.RunOptions(
                 trace_level=tf.RunOptions.FULL_TRACE)
@@ -139,19 +157,24 @@ class DQNAgent:
 
     def act(self, state):
         """Tell this agent to choose an action and return the action chosen"""
-        epsilon = self.epsilon
-        if random.random() <= epsilon:
+        if self.memory.count(self.session) < self.replay_start_size:
             action = random.randrange(self.action_count)
         else:
-            action = np.argmax(self.predict(state[None, :], self.network)[0])
-        self.session.run(self._epsilon_assign, {self._epsilon_new_val: max(
-            self.epsilon_min, epsilon * self.epsilon_decay)})
+            epsilon = self.epsilon
+            if random.random() <= epsilon:
+                action = random.randrange(self.action_count)
+            else:
+                action = np.argmax(self.predict(
+                    state[None, :], self.network)[0])
+            self.session.run(self._epsilon_assign, {self._epsilon_new_val: max(
+                self.epsilon_min, epsilon * self.epsilon_decay)})
         return action
 
     def reward(self, state, action, reward, next_state, done):
         """"Log the reward for the selected action after the envirnoment has been updated"""
         self._remember(state, action, reward, next_state, done)
-        self._replay()
+        if self.memory.count(self.session) >= self.replay_start_size:
+            self._replay()
 
     def _remember(self, state, action, reward, next_state, done):
         self.memory.remember(self.session, (state, action,
@@ -164,6 +187,7 @@ class DQNAgent:
         states, actions, rewards, next_states, dones = rows
         pred_states = self.predict(states, self.network)
         pred_next_states = self.predict(next_states, self.target_network)
-        t_rewards = rewards + (1.0 - dones) * self.gamma * np.amax(pred_next_states, axis=1)
+        t_rewards = rewards + (1.0 - dones) * self.gamma * \
+            np.amax(pred_next_states, axis=1)
         pred_states[range(len(pred_states)), actions.astype(int)] = t_rewards
         self.fit(states, pred_states)
