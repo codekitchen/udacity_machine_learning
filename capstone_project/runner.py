@@ -6,39 +6,11 @@ import gym
 import gym_ple
 from gym.wrappers import Monitor
 
-import numpy as np
-from scipy import misc
-
 from dqn_agent import DQNAgent
+from image import ImagePreprocess
 
 EPISODES = 1000
 BATCH_SIZE = 32
-
-class ImagePreprocess:
-    def __init__(self, env):
-        self.env = env
-        s = self.env.observation_space.shape
-        self.observation_space = np.zeros([32, 32, 1])
-    
-    def reset(self):
-        state = self.env.reset()
-        return self.process(state)
-
-    def step(self, action):
-        res = list(self.env.step(action))
-        res[0] = self.process(res[0])
-        return res
-
-    def process(self, state):
-        # Simple luminance extraction by taking the mean of all 3 channels
-        state = np.mean(state, axis=2)
-        state = misc.imresize(state, (32, 32))
-        state = (state * 255).astype(np.uint8)
-        state = np.expand_dims(state, axis=2)
-        return state
-    
-    def __getattr__(self, attr):
-        return getattr(self.env, attr)
 
 def main():
     agent_class = 'DQN'
@@ -49,9 +21,10 @@ def main():
     env = gym.make(env_name)
     env = Monitor(env, monitor_dir, resume=True,
                   video_callable=lambda id: id % 20 == 0)
+    # simple heuristic that should work to detect envs with images as input
     im = len(env.observation_space.shape) == 3 
     if im:
-        env = ImagePreprocess(env)
+        env = ImagePreprocess(env_name, env)
     agent = DQNAgent(env.observation_space.shape,
                      env.action_space.n, batch_size=BATCH_SIZE, state_dir=state_dir, image_input=im)
 
@@ -75,7 +48,7 @@ def main():
                     env.stats_recorder.done = True
                 done = True
         per_step = (time.time() - st) / step
-        print("episode: {}, time: {}, score: {}, e: {:.2} step: {}, perstep: {:.2}".format(
+        print("episode: {}, time: {}, score: {:.2f}, e: {:.2} step: {}, perstep: {:.2}".format(
             episode_num, step, score, agent.epsilon, agent.step, per_step))
 
     env.close()

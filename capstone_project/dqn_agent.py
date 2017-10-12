@@ -14,7 +14,7 @@ class DQNAgent:
         self.action_count = action_count
         self.state_shape = list(state_shape)
         self.epsilon_min = 0.01
-        self.epsilon_decay = 0.999999  # 0.99991  # 0.9999991
+        self.epsilon_decay = 0.9999954
         self.learning_rate = 0.00025
         self.replay_start_size = 50000
         self.batch_size = batch_size
@@ -22,6 +22,7 @@ class DQNAgent:
         self.memory_size = 1000000
         self.target_update_frequency = 10000
         self.image_input = image_input
+        self.actions = 0
         self._gamma_value = None
         print("input shape ", self.state_shape)
         self._build_model(epsilon=1.0, gamma=0.99)
@@ -37,12 +38,12 @@ class DQNAgent:
             if conv.shape[1] > 3:
                 conv = conv2d(conv, 64, 3, 1, name="conv3")
             flat_shape = np.prod([dim.value for dim in conv.shape[1:]])
-            fc_input = tf.reshape(conv, [-1, flat_shape])
+            layer = tf.reshape(conv, [-1, flat_shape])
         else:
-            fc_input = input_layer
-        fc1 = fully_connected(fc_input, 512, name="dense1")
-        fc2 = fully_connected(fc1, 512, name="dense2")
-        predict = fully_connected(fc2, self.action_count,
+            layer = input_layer
+        layer = fully_connected(layer, 512, name="dense1")
+        # layer = fully_connected(layer, 512, name="dense2")
+        predict = fully_connected(layer, self.action_count,
                                   activation=None, name="output")
         return input_layer, predict
 
@@ -55,6 +56,8 @@ class DQNAgent:
             with tf.variable_scope("target_network"):
                 self.target_network = self._build_network()
                 with tf.name_scope("updater"):
+                    # build the "updater" by iterating over all trainables in the target network,
+                    # and creating an op to copy that same var from "network" to "target_network"
                     tn_vars = self.graph.get_collection(
                         tf.GraphKeys.TRAINABLE_VARIABLES, scope="target_network/")
                     updates = [tf.assign(var, self.graph.get_tensor_by_name(
@@ -74,7 +77,6 @@ class DQNAgent:
                     ('state', self.state_shape, state_dtype),
                     ('action', [], np.float32),
                     ('reward', [], np.float32),
-                    ('next_state', self.state_shape, state_dtype),
                     ('done', [], np.bool)])
             with tf.variable_scope("state"):
                 self._epsilon = tf.Variable(
@@ -168,23 +170,24 @@ class DQNAgent:
                     state[None, :], self.network)[0])
             self.session.run(self._epsilon_assign, {self._epsilon_new_val: max(
                 self.epsilon_min, epsilon * self.epsilon_decay)})
+            self.actions += 1
         return action
 
     def reward(self, state, action, reward, next_state, done):
         """"Log the reward for the selected action after the envirnoment has been updated"""
-        self._remember(state, action, reward, next_state, done)
-        if self.memory.count(self.session) >= self.replay_start_size:
+        self._remember(state, action, reward, done)
+        if self.actions > 0 and self.actions % 4 == 0:
             self._replay()
 
-    def _remember(self, state, action, reward, next_state, done):
-        self.memory.remember(self.session, (state, action,
-                                            reward, next_state, float(done)))
+    def _remember(self, state, action, reward, done):
+        self.memory.remember(
+            self.session, (state, action, reward, float(done)))
 
     def _replay(self):
         rows = self.memory.sample(self.session, self.batch_size)
         if not rows:
             return
-        states, actions, rewards, next_states, dones = rows
+        states, actions, rewards, dones, next_states = rows
         pred_states = self.predict(states, self.network)
         pred_next_states = self.predict(next_states, self.target_network)
         t_rewards = rewards + (1.0 - dones) * self.gamma * \

@@ -1,6 +1,7 @@
 """Defines NN layers"""
 from pickle import Pickler, Unpickler
 from pathlib import Path
+from macos_file import MacOSFile
 
 import random
 import tensorflow as tf
@@ -62,7 +63,8 @@ def conv2d(input_tensor: tf.Tensor,
         #                      [filter_size, filter_size, in_channels.value, n_filters], [1, stride, stride, 1], "SAME", name="filter")
         # if activation:
         #     layer = activation(layer)
-        layer = tf.layers.conv2d(inputs=input_tensor, filters=n_filters, kernel_size=filter_size, strides=stride, activation=activation, name=name)
+        layer = tf.layers.conv2d(inputs=input_tensor, filters=n_filters,
+                                 kernel_size=filter_size, strides=stride, activation=activation, name=name)
         return layer
 
 
@@ -138,26 +140,28 @@ class Memory:
             ops,
             {col.gather_indices: indices for col in self.parts})
 
+
 class NpColumn:
     def __init__(self, name, shape):
         self.name = name
         self.shape = shape
-    
+
     def build(self, size, dtype):
         self.storage = np.zeros([size] + self.shape, dtype=dtype)
         return self
 
+
 class NpMemory:
+    """assumes that the first shape is the input state"""
     def __init__(self, size, shapes):
         self.size = size
         self.shapes = shapes
-        self._build()
-    
-    def _build(self):
         self._index = 0
         self._count = 0
-        self.storage = [NpColumn(name, shape).build(self.size, dtype) for (name, shape, dtype) in self.shapes]
-    
+        self._last_insert = 0
+        self.storage = [NpColumn(name, shape).build(self.size, dtype)
+                        for (name, shape, dtype) in self.shapes]
+
     @staticmethod
     def fname(path):
         return path + ".memory"
@@ -167,10 +171,10 @@ class NpMemory:
         with open(self.fname(path), 'rb') as f:
             p = Unpickler(f)
             return p.load()
-    
+
     def save(self, path):
         with open(self.fname(path), 'wb') as f:
-            p = Pickler(f, -1)
+            p = Pickler(MacOSFile(f), -1)
             p.dump(self)
         # remove old *.memory files
         save_dir = Path(path).parent
@@ -178,7 +182,7 @@ class NpMemory:
             basefile = memfile.with_suffix('.meta')
             if not basefile.is_file():
                 memfile.unlink()
-    
+
     def count(self, _session):
         return self._count
 
@@ -186,13 +190,21 @@ class NpMemory:
         for col, val in zip(self.storage, values):
             col.storage[self._index] = val
         self._count += 1
+        self._last_insert = self._index
         self._index = (self._index + 1) % self.size
-    
+
     def sample(self, _session, batch_size):
+        """returns the next state for each sample as well"""
         count = self._count
-        if count < batch_size:
+        if count <= batch_size:
             return
         if count > self.size:
             count = self.size
-        indices = random.sample(range(count), batch_size)
-        return [col.storage[indices] for col in self.storage]
+        candidates = list(range(count))
+        candidates.remove(self._last_insert)
+        indices = np.array(random.sample(candidates, batch_size))
+        samples = [col.storage[indices] for col in self.storage]
+        # add the next states as well
+        next_indices = (indices + 1) % self.size
+        samples.append(self.storage[0].storage[next_indices])
+        return samples
