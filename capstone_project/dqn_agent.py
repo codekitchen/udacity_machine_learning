@@ -21,8 +21,12 @@ class DQNAgent:
         self.state_dir = state_dir
         self.memory_size = 1000000
         self.target_update_frequency = 10000
+        self.action_repeat = 4
+        self.update_frequency = 4
         self.image_input = image_input
         self.actions = 0
+        self.frames = 0
+        self.last_action = None
         self._gamma_value = None
         print("input shape ", self.state_shape)
         self._build_model(epsilon=1.0, gamma=0.99)
@@ -163,20 +167,30 @@ class DQNAgent:
             action = random.randrange(self.action_count)
         else:
             epsilon = self.epsilon
-            if random.random() <= epsilon:
-                action = random.randrange(self.action_count)
+            if self.last_action and self.frames % self.action_repeat != 0:
+                # action repeat
+                action = self.last_action
             else:
-                action = np.argmax(self.predict(
-                    state[None, :], self.network)[0])
+                # select an action
+                if random.random() <= epsilon:
+                    # random exploration
+                    action = random.randrange(self.action_count)
+                else:
+                    # selection based on network
+                    action = np.argmax(self.predict(
+                        state[None, :], self.network)[0])
+                self.actions += 1
+            # update epsilon each frame
             self.session.run(self._epsilon_assign, {self._epsilon_new_val: max(
                 self.epsilon_min, epsilon * self.epsilon_decay)})
-            self.actions += 1
+            self.frames += 1
+            self.last_action = action
         return action
 
-    def reward(self, state, action, reward, next_state, done):
+    def reward(self, state, action, reward, _next_state, done):
         """"Log the reward for the selected action after the envirnoment has been updated"""
         self._remember(state, action, reward, done)
-        if self.actions > 0 and self.actions % 4 == 0:
+        if self.actions > 0 and self.actions % self.update_frequency == 0:
             self._replay()
 
     def _remember(self, state, action, reward, done):

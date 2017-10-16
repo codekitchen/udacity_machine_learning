@@ -200,9 +200,16 @@ class NpMemory:
             return
         if count > self.size:
             count = self.size
-        candidates = list(range(count))
-        candidates.remove(self._last_insert)
-        indices = np.array(random.sample(candidates, batch_size))
+        # we can't use random.sample(range(count)) here because
+        # there's an element in the middle of the range
+        # (self._last_insert) that we need to reject.
+        indices = []
+        while len(indices) < batch_size:
+            n = random.randrange(count)
+            if n != self._last_insert:
+                indices.append(n)
+        indices = np.array(indices)
+        # indices = np.array(random.sample(range(count), batch_size))
         samples = [col.storage[indices] for col in self.storage]
         # add the next states as well
         next_indices = (indices + 1) % self.size

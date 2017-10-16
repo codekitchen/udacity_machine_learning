@@ -48,8 +48,8 @@ def main():
                     env.stats_recorder.done = True
                 done = True
         per_step = (time.time() - st) / step
-        print("episode: {}, time: {}, score: {:.2f}, e: {:.2} step: {}, perstep: {:.2}".format(
-            episode_num, step, score, agent.epsilon, agent.step, per_step))
+        print("episode: {}, time: {}, score: {:.2f}, e: {:.2}, frame: {}, action: {}, step: {}, perstep: {:.2}".format(
+            episode_num, step, score, agent.epsilon, agent.frames, agent.actions, agent.step, per_step))
 
     env.close()
 
