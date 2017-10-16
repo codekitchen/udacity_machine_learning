@@ -67,6 +67,24 @@ def conv2d(input_tensor: tf.Tensor,
                                  kernel_size=filter_size, strides=stride, activation=activation, name=name)
         return layer
 
+def agent_network(state_shape, action_count, image_input):
+    input_layer = tf.placeholder(
+        tf.float32, shape=([None] + state_shape), name="input")
+    if image_input:
+        # conv network to process images
+        conv = conv2d(input_layer, 32, 8, 4, name="conv1")
+        conv = conv2d(conv, 64, 4, 2, name="conv2")
+        if conv.shape[1] > 3:
+            conv = conv2d(conv, 64, 3, 1, name="conv3")
+        flat_shape = np.prod([dim.value for dim in conv.shape[1:]])
+        layer = tf.reshape(conv, [-1, flat_shape])
+    else:
+        layer = input_layer
+    layer = fully_connected(layer, 512, name="dense1")
+    # layer = fully_connected(layer, 512, name="dense2")
+    predict = fully_connected(layer, action_count,
+                                activation=None, name="output")
+    return input_layer, layer, predict
 
 class Column:
     def __init__(self, name, shape):

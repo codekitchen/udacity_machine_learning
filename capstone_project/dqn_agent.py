@@ -1,62 +1,48 @@
 """Implements the DQN Agent"""
+
+#pylint: disable=E1129
+
 import random
 
 import tensorflow as tf
 import numpy as np
 
-from layers import fully_connected, conv2d, Memory, NpMemory
+from layers import agent_network, NpMemory
+from base_agent import BaseAgent
 
 
-class DQNAgent:
+class DQNAgent(BaseAgent):
     """A Deep Q-Network learning agent"""
 
     def __init__(self, env_factory, state_dir):
         self.env = env_factory()
-        self.action_count = self.env.action_space.n
-        self.state_shape = list(self.env.observation_space.shape)
         self.epsilon_min = 0.01
         self.epsilon_decay = 0.9999954
         self.learning_rate = 0.00025
         self.replay_start_size = 50000
         self.batch_size = 32
-        self.state_dir = state_dir
         self.memory_size = 1000000
         self.target_update_frequency = 10000
         self.action_repeat = 4
         self.update_frequency = 4
-        self.image_input = self.env.is_image
         self.actions = 0
         self.frames = 0
         self.last_action = None
         self._gamma_value = None
         self.do_replay = False
-        print("input shape ", self.state_shape)
-        self._build_model(epsilon=1.0, gamma=0.99)
-        self._start_session()
+        super().__init__(self.env, state_dir)
+        print("DQN input shape ", self.state_shape)
 
     def _build_network(self):
-        input_layer = tf.placeholder(
-            tf.float32, shape=([None] + self.state_shape), name="input")
-        if self.image_input:
-            # conv network to process images
-            conv = conv2d(input_layer, 32, 8, 4, name="conv1")
-            conv = conv2d(conv, 64, 4, 2, name="conv2")
-            if conv.shape[1] > 3:
-                conv = conv2d(conv, 64, 3, 1, name="conv3")
-            flat_shape = np.prod([dim.value for dim in conv.shape[1:]])
-            layer = tf.reshape(conv, [-1, flat_shape])
-        else:
-            layer = input_layer
-        layer = fully_connected(layer, 512, name="dense1")
-        # layer = fully_connected(layer, 512, name="dense2")
-        predict = fully_connected(layer, self.action_count,
-                                  activation=None, name="output")
-        return input_layer, predict
+        input_layer, _final_layer, predict_layer = agent_network(
+            state_shape=self.state_shape,
+            image_input=self.image_input,
+            action_count=self.action_count)
+        return input_layer, predict_layer
 
-    def _build_model(self, epsilon, gamma):
-        self.graph = tf.Graph()
+    def _build_model(self, epsilon=1.0, gamma=0.99):
+        super()._build_model()
         with self.graph.as_default():
-            self._step = tf.train.create_global_step()
             with tf.variable_scope("network"):
                 self.network = self._build_network()
             with tf.variable_scope("target_network"):
@@ -96,23 +82,12 @@ class DQNAgent:
                     gamma, trainable=False, name="gamma")
 
     def _start_session(self):
-        with self.graph.as_default():
-            self.saver = tf.train.Saver()
-            self.session = tf.Session()
-            self.summary_data = tf.summary.merge_all()
-            summary_dir = "{}/summary".format(self.state_dir)
-            self.writer = tf.summary.FileWriter(summary_dir, self.graph)
-            self.session.run(tf.global_variables_initializer())
-            self.session.run(self._update_target_network)
-            self.graph.finalize()
-            checkpoint = tf.train.latest_checkpoint(self._snapshot_dir)
-            if checkpoint:
-                self.saver.restore(self.session, checkpoint)
-                self.memory = self.memory.restore(checkpoint)
+        super()._start_session()
+        self.session.run(self._update_target_network)
 
-    def __del__(self):
-        if self.session:
-            self.session.close()
+    def _restore(self, checkpoint):
+        super()._restore(checkpoint)
+        self.memory = self.memory.restore(checkpoint)
 
     def predict(self, state: np.ndarray, network):
         """Give propabilities for each action, given `state` and the current model"""
@@ -153,15 +128,6 @@ class DQNAgent:
     def gamma(self):
         self._gamma_value = self._gamma_value or self.session.run(self._gamma)
         return self._gamma_value
-
-    @property
-    def step(self):
-        return tf.train.global_step(
-            self.session, tf.train.get_global_step(graph=self.session.graph))
-
-    @property
-    def _snapshot_dir(self):
-        return "{}/snapshots".format(self.state_dir)
 
     def act(self, state):
         """Tell this agent to choose an action and return the action chosen"""

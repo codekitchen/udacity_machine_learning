@@ -39,8 +39,9 @@ def main():
         env = gym.make(args.env)
         nonlocal env_count
         env.seed(env_count)
-        # env = Monitor(env, monitor_dir, resume=True, video_callable=lambda id: id % 20 == 0)
+        # add a Monitor to the first env, to get video output
         if env_count == 0:
+            # env = Monitor(env, monitor_dir, resume=True, video_callable=lambda id: id % 20 == 0)
             env = Monitor(env, monitor_dir, resume=True)
         # simple heuristic that should work to detect envs with images as input
         is_image = len(env.observation_space.shape) == 3
