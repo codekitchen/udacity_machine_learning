@@ -10,24 +10,26 @@ from layers import fully_connected, conv2d, Memory, NpMemory
 class DQNAgent:
     """A Deep Q-Network learning agent"""
 
-    def __init__(self, state_shape, action_count, batch_size, state_dir, image_input):
-        self.action_count = action_count
-        self.state_shape = list(state_shape)
+    def __init__(self, env_factory, state_dir):
+        self.env = env_factory()
+        self.action_count = self.env.action_space.n
+        self.state_shape = list(self.env.observation_space.shape)
         self.epsilon_min = 0.01
         self.epsilon_decay = 0.9999954
         self.learning_rate = 0.00025
         self.replay_start_size = 50000
-        self.batch_size = batch_size
+        self.batch_size = 32
         self.state_dir = state_dir
         self.memory_size = 1000000
         self.target_update_frequency = 10000
         self.action_repeat = 4
         self.update_frequency = 4
-        self.image_input = image_input
+        self.image_input = self.env.is_image
         self.actions = 0
         self.frames = 0
         self.last_action = None
         self._gamma_value = None
+        self.do_replay = False
         print("input shape ", self.state_shape)
         self._build_model(epsilon=1.0, gamma=0.99)
         self._start_session()
@@ -167,7 +169,7 @@ class DQNAgent:
             action = random.randrange(self.action_count)
         else:
             epsilon = self.epsilon
-            if self.last_action and self.frames % self.action_repeat != 0:
+            if self.frames % self.action_repeat != 0:
                 # action repeat
                 action = self.last_action
             else:
@@ -180,18 +182,21 @@ class DQNAgent:
                     action = np.argmax(self.predict(
                         state[None, :], self.network)[0])
                 self.actions += 1
+                if self.actions % self.update_frequency == 0:
+                    self.do_replay = True
             # update epsilon each frame
             self.session.run(self._epsilon_assign, {self._epsilon_new_val: max(
                 self.epsilon_min, epsilon * self.epsilon_decay)})
             self.frames += 1
-            self.last_action = action
+        self.last_action = action
         return action
 
     def reward(self, state, action, reward, _next_state, done):
         """"Log the reward for the selected action after the envirnoment has been updated"""
         self._remember(state, action, reward, done)
-        if self.actions > 0 and self.actions % self.update_frequency == 0:
+        if self.do_replay:
             self._replay()
+            self.do_replay = False
 
     def _remember(self, state, action, reward, done):
         self.memory.remember(
@@ -208,3 +213,21 @@ class DQNAgent:
             np.amax(pred_next_states, axis=1)
         pred_states[range(len(pred_states)), actions.astype(int)] = t_rewards
         self.fit(states, pred_states)
+
+    def status(self, _env):
+        return [
+            ('frame', self.frames),
+            ('action', self.actions),
+            ('step', self.step),
+        ]
+
+    def run(self):
+        self.env.info_cb = self.status
+        while True:
+            state = self.env.reset()
+            reset = False
+            while not reset:
+                action = self.act(state)
+                next_state, reward, done, reset = self.env.step(action)
+                self.reward(state, action, reward, next_state, done)
+                state = next_state

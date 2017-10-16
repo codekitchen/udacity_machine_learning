@@ -22,6 +22,8 @@ class ImagePreprocess:
     dimension would require changing the CNNs.
     """
 
+    is_image = True
+
     def __init__(self, env_name, env, history=4):
         self.env = env
         self.imsize = SIZES.get(env_name, (84, 84))
@@ -33,16 +35,18 @@ class ImagePreprocess:
         self.state = np.zeros_like(self.observation_space)
 
     def reset(self):
-        self.state = np.zeros_like(self.observation_space)
-        first_state = self.env.reset()
-        return self.process(first_state)
+        first_state = self._process(self.env.reset())
+        # "clear" all the history to this initial state
+        for _ in range(self.history):
+          self._update_state(first_state)
+        return self.state
 
     def step(self, action):
         res = list(self.env.step(action))
-        res[0] = self.process(res[0])
+        res[0] = self._update_state(self._process(res[0]))
         return res
 
-    def process(self, state):
+    def _process(self, state):
         if self.gray:
             # Simple luminance extraction by taking the mean of all 3 channels
             state = np.mean(state, axis=2)
@@ -50,8 +54,11 @@ class ImagePreprocess:
         state = (state * 255).astype(np.uint8)
         if self.gray:
             state = np.expand_dims(state, axis=2)
+        return state
+
+    def _update_state(self, processed_state):
         self.state = np.roll(self.state, shift=self.chans, axis=2)
-        self.state[:, :, 0:self.chans] = state
+        self.state[:, :, 0:self.chans] = processed_state
         return self.state
 
     def __getattr__(self, attr):
