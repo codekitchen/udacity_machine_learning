@@ -3,6 +3,7 @@
 #pylint: disable=E1129
 
 import random
+import time
 
 import tensorflow as tf
 import numpy as np
@@ -179,11 +180,13 @@ class DQNAgent(BaseAgent):
         pred_states[range(len(pred_states)), actions.astype(int)] = t_rewards
         self.fit(states, pred_states)
 
-    def status(self, _env):
+    def status(self, env):
+        per_frame = (time.time() - env.start_time) / env.ep_frame
         return [
             ('frame', self.frames),
             ('action', self.actions),
             ('step', self.step),
+            ('perframe', '{:.3f}'.format(per_frame)),
         ]
 
     def run(self):

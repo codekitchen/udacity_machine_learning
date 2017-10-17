@@ -47,12 +47,10 @@ class EnvRecorder:
         return state, reward, done, reset
 
     def _finish(self):
-        per_frame = (time.time() - self.start_time) / self.ep_frame
         stats = [
             ('episode', self.episode),
             ('time', self.ep_frame),
             ('score', '{:.2f}'.format(self.ep_score)),
-            ('perframe', '{:.3f}'.format(per_frame)),
         ] + self.info_cb(self)
         print(", ".join(["{}: {}".format(k, v) for k, v in stats]))
         self.reports += 1

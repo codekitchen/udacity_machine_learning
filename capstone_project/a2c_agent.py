@@ -4,6 +4,7 @@
 
 import tensorflow as tf
 import numpy as np
+import time
 
 from base_agent import BaseAgent
 from layers import agent_network, fully_connected
@@ -20,6 +21,7 @@ class A2CAgent(BaseAgent):
         self.total_steps = 40e6
         self.starting_lr = 1e-3
         self.envs = []
+        self.start_time = time.time()
         for _ in range(self.env_count):
             env = env_factory()
             self.envs.append(env)
@@ -97,9 +99,11 @@ class A2CAgent(BaseAgent):
         _, frame, step, learning_rate = self.session.run(
             [self.set_scores, self._frames, self._step, self.learning_rate],
             {self.score_placeholder: score})
+        per_frame = (time.time() - self.start_time) / frame
         return [
             ('frame', frame),
             ('step', step),
+            ('perframe', '{:.3f}'.format(per_frame)),
             ('lr', '{:.2e}'.format(learning_rate)),
         ]
 
@@ -125,6 +129,7 @@ class A2CAgent(BaseAgent):
         self.writer.add_summary(summary, self.step)
 
     def run(self):
+        self.start_time = time.time()
         states = [env.reset() for env in self.envs]
         last_save = 0
         while self.frames < self.total_steps:
