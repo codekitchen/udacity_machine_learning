@@ -131,6 +131,9 @@ class A2CAgent(BaseAgent):
             if self.frames - last_save > 100000:
                 self._save()
                 last_save = self.frames
+            all_states = []
+            all_actions = []
+            all_rewards = []
             for envid, env in enumerate(self.envs):
                 rewards = []
                 actions = []
@@ -151,7 +154,14 @@ class A2CAgent(BaseAgent):
                 for idx in range(len(rewards) - 2, -1, -1):
                     total_rewards[idx] = rewards[idx] + \
                         self.gamma * total_rewards[idx + 1]
-                self.fit(seen, actions, total_rewards)
+                assert len(seen) == len(actions)
+                assert len(seen) == len(total_rewards)
+                all_states += seen
+                all_actions += actions
+                all_rewards += total_rewards
+
+            self.fit(all_states, all_actions, all_rewards)
+
         for env in self.envs:
             env.close()
         self._save()
