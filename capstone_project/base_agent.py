@@ -19,6 +19,7 @@ class BaseAgent:
         self.graph = tf.Graph()
         with self.graph.as_default():
             self._step = tf.train.create_global_step()
+            tf.summary.scalar('global_step', self._step)
 
     def _start_session(self):
         with self.graph.as_default():
@@ -35,6 +36,16 @@ class BaseAgent:
     
     def _restore(self, checkpoint):
         self.saver.restore(self.session, checkpoint)
+
+    def _save(self):
+        snapshot_name = "{}/snap".format(self._snapshot_dir)
+        save_path = self.saver.save(
+            self.session, snapshot_name, global_step=self._step)
+        self._save_other(save_path)
+        print("saved model")
+    
+    def _save_other(self, save_path):
+        pass
 
     @property
     def step(self):

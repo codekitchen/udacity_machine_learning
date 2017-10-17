@@ -102,11 +102,7 @@ class DQNAgent(BaseAgent):
             self.session.run(self._update_target_network)
             print("copied network into target_network")
         if step % 5000 == 0:
-            snapshot_name = "{}/snap".format(self._snapshot_dir)
-            save_path = self.saver.save(
-                self.session, snapshot_name, global_step=step)
-            self.memory.save(save_path)
-            print("saved model")
+            self._save()
         if step % 100 == 0:
             args['options'] = tf.RunOptions(
                 trace_level=tf.RunOptions.FULL_TRACE)
@@ -128,6 +124,9 @@ class DQNAgent(BaseAgent):
     def gamma(self):
         self._gamma_value = self._gamma_value or self.session.run(self._gamma)
         return self._gamma_value
+
+    def _save_other(self, save_path):
+        self.memory.save(save_path)
 
     def act(self, state):
         """Tell this agent to choose an action and return the action chosen"""

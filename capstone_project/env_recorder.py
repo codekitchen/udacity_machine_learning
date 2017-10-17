@@ -1,26 +1,34 @@
 import time
 
 
-class EnvRecorder:
-    def __init__(self, env):
-        self.env = env
+class EnvSharedState:
+    def __init__(self):
         self.episode = 0
+
+    def next_episode(self) -> int:
+        self.episode += 1
+        return self.episode - 1
+
+class EnvRecorder:
+    def __init__(self, env, shared_state: EnvSharedState):
+        self.env = env
+        self.shared_state = shared_state
         self.frame = 0
+        self.reports = 0
+        self.episode = 0
+        self.info_cb = lambda *a: []
+        self._reset_state()
+
+    def _reset_state(self):
         self.ep_frame = 0
         self.ep_score = 0
-        self.reports = 0
         self.done = False
         self.start_time = time.time()
-        self.info_cb = lambda *a: []
 
     def reset(self):
-        state = self.env.reset()
-        self.episode += 1
-        self.ep_frame = 0
-        self.ep_score = 0
-        self.done = False
-        self.start_time = time.time()
-        return state
+        self._reset_state()
+        self.episode = self.shared_state.next_episode()
+        return self.env.reset()
 
     def step(self, action):
         self.frame += 1
