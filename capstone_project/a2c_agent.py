@@ -2,9 +2,11 @@
 
 # pylint: disable=E1129
 
+import time
+from collections import namedtuple
+
 import tensorflow as tf
 import numpy as np
-import time
 
 from base_agent import BaseAgent
 from layers import agent_network, fully_connected
@@ -127,33 +129,49 @@ class A2CAgent(BaseAgent):
              self.target_value: rewards,
              self.target_predict: actions})
         self.writer.add_summary(summary, self.step)
+    
+    # EnvState = namedtuple('EnvResult', 'env, states, actions, rewards, reset')
+    class RunEnv:
+        def __init__(self, env):
+            self.env = env
+            self.active = True
+            self.done = False
+            self.current_state = env.reset()
+            self.states = []
+            self.actions = []
+            self.rewards = []
+
+        def step(self, action):
+            self.states.append(self.current_state)
+            self.actions.append(action)
+            next_state, reward, self.done, reset = self.env.step(action)
+            self.active = not reset
+            self.rewards.append(reward)
+            self.current_state = next_state
+            if reset:
+                self.current_state = self.env.reset()
 
     def run(self):
         self.start_time = time.time()
-        states = [env.reset() for env in self.envs]
+        run_envs = [RunEnv(env) for env in self.envs]
         last_save = 0
         while self.frames < self.total_steps:
             if self.frames - last_save > 100000:
                 self._save()
                 last_save = self.frames
+
             all_states = []
             all_actions = []
             all_rewards = []
-            for envid, env in enumerate(self.envs):
-                rewards = []
-                actions = []
-                seen = []
-                for _ in range(self.t_steps):
-                    seen.append(states[envid])
-                    action = self.act(states[envid][None, :])[0]
-                    actions.append(action)
-                    next_state, reward, done, reset = env.step(action)
-                    rewards.append(reward)
-                    states[envid] = next_state
-                    if reset:
-                        states[envid] = env.reset()
-                        break
-                total_rewards = [0] * len(rewards)
+
+            for _ in range(self.t_steps):
+                envs = [env if env.active in run_envs]
+                states = [env.current_state for env in envs]
+                actions = self.act(states)
+                for env, action in zip(envs, actions):
+                    env.step(action)
+            for env in run_envs:
+                total_rewards = [0] * len(env.rewards)
                 if not done:
                     total_rewards[-1] = self.value(next_state[None, :])[0]
                 for idx in range(len(rewards) - 2, -1, -1):
@@ -164,6 +182,33 @@ class A2CAgent(BaseAgent):
                 all_states += seen
                 all_actions += actions
                 all_rewards += total_rewards
+
+
+            # for envid, env in enumerate(self.envs):
+            #     rewards = []
+            #     actions = []
+            #     seen = []
+            #     for _ in range(self.t_steps):
+            #         seen.append(states[envid])
+            #         action = self.act(states[envid][None, :])[0]
+            #         actions.append(action)
+            #         next_state, reward, done, reset = env.step(action)
+            #         rewards.append(reward)
+            #         states[envid] = next_state
+            #         if reset:
+            #             states[envid] = env.reset()
+            #             break
+            #     total_rewards = [0] * len(rewards)
+            #     if not done:
+            #         total_rewards[-1] = self.value(next_state[None, :])[0]
+            #     for idx in range(len(rewards) - 2, -1, -1):
+            #         total_rewards[idx] = rewards[idx] + \
+            #             self.gamma * total_rewards[idx + 1]
+            #     assert len(seen) == len(actions)
+            #     assert len(seen) == len(total_rewards)
+            #     all_states += seen
+            #     all_actions += actions
+            #     all_rewards += total_rewards
 
             self.fit(all_states, all_actions, all_rewards)
 
