@@ -3,7 +3,6 @@
 # pylint: disable=E1129
 
 import time
-from collections import namedtuple
 
 import tensorflow as tf
 import numpy as np
@@ -47,16 +46,17 @@ class A2CAgent(BaseAgent):
             with tf.variable_scope('state'):
                 self._frames = tf.Variable(0, trainable=False, name='frames', dtype=tf.int64)
                 tf.summary.scalar('frames', self._frames)
-                self.update_frames = tf.assign_add(self._frames, tf.cast(tf.shape(self.input_layer)[0], tf.int64))
-                self.learning_rate = tf.maximum(0.0, self.starting_lr * (1.0 - (tf.cast(self._frames, tf.float32) / self.total_steps)))
+                self.update_frames = tf.assign_add(self._frames,
+                                                   tf.cast(tf.shape(self.input_layer)[0], tf.int64))
+                lr_calc = self.starting_lr * \
+                    (1.0 - (tf.cast(self._frames, tf.float64) / self.total_steps))
+                self.learning_rate = tf.maximum(tf.cast(0.0, tf.float64), lr_calc)
                 tf.summary.scalar('learning_rate', self.learning_rate)
             with tf.variable_scope('training'):
                 self.target_predict = tf.placeholder(
                     tf.int32, shape=[None], name='target_predict')
                 self.target_value = tf.placeholder(
                     tf.float32, shape=[None], name='target_value')
-                # mse_predict = tf.reduce_mean(tf.squared_difference(self.predict_layer, self.target_predict))
-                # tf.summary.scalar('mse_predict', mse_predict)
                 mse_value = tf.reduce_mean(tf.squared_difference(
                     self.value_layer, self.target_value))
                 tf.summary.scalar('mse_value', mse_value)
@@ -70,10 +70,6 @@ class A2CAgent(BaseAgent):
                 tf.summary.scalar('combined_err', train_value)
                 self.train_op = trainer.minimize(
                     train_value, global_step=self._step)
-                # self.train_op_value = trainer.minimize(
-                #     mse_value, global_step=self._step)
-                # self.train_op_predict = trainer.minimize(
-                #     diff_predict, global_step=self._step)
             with tf.variable_scope('stats'):
                 self.score_placeholder = tf.placeholder(
                     tf.float32, shape=[], name='score_input')
@@ -87,9 +83,11 @@ class A2CAgent(BaseAgent):
                 self.set_scores = tf.group(
                     tf.assign(score_1, self.score_placeholder),
                     tf.assign(
-                        score_100, score_100 + (self.score_placeholder / 100.0) - (score_100 / 100.0)),
+                        score_100,
+                        score_100 + (self.score_placeholder / 100.0) - (score_100 / 100.0)),
                     tf.assign(
-                        score_1000, score_1000 + (self.score_placeholder / 1000.0) - (score_1000 / 1000.0)),
+                        score_1000,
+                        score_1000 + (self.score_placeholder / 1000.0) - (score_1000 / 1000.0)),
                 )
 
     @property
@@ -105,7 +103,7 @@ class A2CAgent(BaseAgent):
         return [
             ('frame', frame),
             ('step', step),
-            ('perframe', '{:.3f}'.format(per_frame)),
+            ('perframe', '{:.6f}'.format(per_frame)),
             ('lr', '{:.2e}'.format(learning_rate)),
         ]
 
@@ -132,30 +130,38 @@ class A2CAgent(BaseAgent):
         if step % 50 == 0:
             self.writer.add_summary(summary, step)
     
-    # EnvState = namedtuple('EnvResult', 'env, states, actions, rewards, reset')
     class RunEnv:
         def __init__(self, env):
             self.env = env
-            self.active = True
             self.done = False
-            self.current_state = env.reset()
+            self.reset = True
+            self.current_state = None
             self.states = []
             self.actions = []
             self.rewards = []
 
+        @property
+        def active(self):
+            return not self.reset
+
+        def prepare(self):
+            self.states.clear()
+            self.actions.clear()
+            self.rewards.clear()
+            if self.reset:
+                self.current_state = self.env.reset()
+                self.reset = False
+
         def step(self, action):
             self.states.append(self.current_state)
             self.actions.append(action)
-            next_state, reward, self.done, reset = self.env.step(action)
-            self.active = not reset
+            next_state, reward, self.done, self.reset = self.env.step(action)
             self.rewards.append(reward)
             self.current_state = next_state
-            if reset:
-                self.current_state = self.env.reset()
 
     def run(self):
         self.start_time = time.time()
-        run_envs = [RunEnv(env) for env in self.envs]
+        run_envs: [self.RunEnv] = [self.RunEnv(env) for env in self.envs]
         last_save = 0
         while self.frames < self.total_steps:
             if self.frames - last_save > 100000:
@@ -166,51 +172,28 @@ class A2CAgent(BaseAgent):
             all_actions = []
             all_rewards = []
 
+            for env in run_envs:
+                env.prepare()
+
             for _ in range(self.t_steps):
-                envs = [env if env.active in run_envs]
+                envs = [env for env in run_envs if env.active]
                 states = [env.current_state for env in envs]
                 actions = self.act(states)
                 for env, action in zip(envs, actions):
                     env.step(action)
-            for env in run_envs:
+            values = self.value([env.current_state for env in run_envs])
+            for env, value in zip(run_envs, values):
                 total_rewards = [0] * len(env.rewards)
-                if not done:
-                    total_rewards[-1] = self.value(next_state[None, :])[0]
-                for idx in range(len(rewards) - 2, -1, -1):
-                    total_rewards[idx] = rewards[idx] + \
+                if not env.done:
+                    total_rewards[-1] = value
+                for idx in range(len(env.rewards) - 2, -1, -1):
+                    total_rewards[idx] = env.rewards[idx] + \
                         self.gamma * total_rewards[idx + 1]
-                assert len(seen) == len(actions)
-                assert len(seen) == len(total_rewards)
-                all_states += seen
-                all_actions += actions
+                assert len(env.states) == len(env.actions)
+                assert len(env.states) == len(total_rewards)
+                all_states += env.states
+                all_actions += env.actions
                 all_rewards += total_rewards
-
-
-            # for envid, env in enumerate(self.envs):
-            #     rewards = []
-            #     actions = []
-            #     seen = []
-            #     for _ in range(self.t_steps):
-            #         seen.append(states[envid])
-            #         action = self.act(states[envid][None, :])[0]
-            #         actions.append(action)
-            #         next_state, reward, done, reset = env.step(action)
-            #         rewards.append(reward)
-            #         states[envid] = next_state
-            #         if reset:
-            #             states[envid] = env.reset()
-            #             break
-            #     total_rewards = [0] * len(rewards)
-            #     if not done:
-            #         total_rewards[-1] = self.value(next_state[None, :])[0]
-            #     for idx in range(len(rewards) - 2, -1, -1):
-            #         total_rewards[idx] = rewards[idx] + \
-            #             self.gamma * total_rewards[idx + 1]
-            #     assert len(seen) == len(actions)
-            #     assert len(seen) == len(total_rewards)
-            #     all_states += seen
-            #     all_actions += actions
-            #     all_rewards += total_rewards
 
             self.fit(all_states, all_actions, all_rewards)
 
