@@ -79,17 +79,17 @@ class A2CAgent(BaseAgent):
                     tf.float32, shape=[], name='score_input')
                 score_1 = tf.Variable(0., trainable=False, name='score_1')
                 tf.summary.scalar('score_1', score_1)
-                score_10 = tf.Variable(0., trainable=False, name='score_10')
-                tf.summary.scalar('score_10', score_10)
                 score_100 = tf.Variable(0., trainable=False, name='score_100')
                 tf.summary.scalar('score_100', score_100)
+                score_1000 = tf.Variable(0., trainable=False, name='score_1000')
+                tf.summary.scalar('score_1000', score_1000)
 
                 self.set_scores = tf.group(
                     tf.assign(score_1, self.score_placeholder),
                     tf.assign(
-                        score_10, score_10 + (self.score_placeholder / 10.0) - (score_10 / 10.0)),
-                    tf.assign(
                         score_100, score_100 + (self.score_placeholder / 100.0) - (score_100 / 100.0)),
+                    tf.assign(
+                        score_1000, score_1000 + (self.score_placeholder / 1000.0) - (score_1000 / 1000.0)),
                 )
 
     @property
@@ -123,12 +123,14 @@ class A2CAgent(BaseAgent):
         return np.squeeze(vals, axis=1)
 
     def fit(self, states, actions, rewards):
-        _, summary = self.session.run(
-            [self.train_op, self.summary_data],
+        _, summary, step = self.session.run(
+            [self.train_op, self.summary_data, self._step],
             {self.input_layer: states,
              self.target_value: rewards,
              self.target_predict: actions})
-        self.writer.add_summary(summary, self.step)
+
+        if step % 50 == 0:
+            self.writer.add_summary(summary, step)
     
     # EnvState = namedtuple('EnvResult', 'env, states, actions, rewards, reset')
     class RunEnv:
