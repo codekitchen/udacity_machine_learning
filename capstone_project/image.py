@@ -1,5 +1,5 @@
 import numpy as np
-from scipy import misc
+import cv2
 
 SIZES = {
     'PuckWorld-v0': (32, 32),
@@ -48,10 +48,8 @@ class ImagePreprocess:
 
     def _process(self, state):
         if self.gray:
-            # Simple luminance extraction by taking the mean of all 3 channels
-            state = np.mean(state, axis=2)
-        state = misc.imresize(state, self.imsize)
-        state = (state * 255).astype(np.uint8)
+            state = cv2.cvtColor(state, cv2.COLOR_RGB2GRAY)
+        state = cv2.resize(state, self.imsize, interpolation=cv2.INTER_AREA)
         if self.gray:
             state = np.expand_dims(state, axis=2)
         return state
