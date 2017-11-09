@@ -188,7 +188,7 @@ class A2CAgent(BaseAgent):
 
     def run(self):
         self.start_time = time.time()
-        run_envs: [self.RunEnv] = [self.RunEnv(env) for env in self.envs]
+        run_envs = [self.RunEnv(env) for env in self.envs]
         last_save = 0
         while self.frames < self.total_steps:
             if self.frames - last_save > 100000:
