@@ -79,7 +79,13 @@ class A2CAgent(BaseAgent):
                 loss = diff_predict + self.value_weight * \
                     mse_value - self.entropy_weight * entropy
                 tf.summary.scalar('loss', loss)
-                self.train_op = trainer.minimize(loss, global_step=self._step)
+                # self.train_op = trainer.minimize(loss, global_step=self._step)
+                grads_and_vars = trainer.compute_gradients(loss)
+                grads, vars = zip(*grads_and_vars)
+                grads, _ = tf.clip_by_global_norm(grads, 0.5)
+                grads_and_vars = list(zip(grads, vars))
+                self.train_op = trainer.apply_gradients(grads_and_vars, global_step=self._step)
+
             with tf.variable_scope('stats'):
                 self.score_placeholder = tf.placeholder(
                     tf.float32, shape=[], name='score_input')
