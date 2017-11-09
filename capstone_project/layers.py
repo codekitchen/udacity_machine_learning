@@ -72,8 +72,7 @@ def agent_network(state_shape, action_count, image_input):
         tf.float32, shape=([None] + state_shape), name="input")
     if image_input:
         # conv network to process images
-        input_layer = tf.cast(input_layer, tf.float32)/255.
-        conv = conv2d(input_layer, 32, 8, 4, name="conv1")
+        conv = conv2d(tf.cast(input_layer, tf.float32)/255., 32, 8, 4, name="conv1")
         conv = conv2d(conv, 64, 4, 2, name="conv2")
         if conv.shape[1] > 3:
             conv = conv2d(conv, 64, 3, 1, name="conv3")
