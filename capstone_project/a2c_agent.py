@@ -121,10 +121,12 @@ class A2CAgent(BaseAgent):
     def act(self, states):
         """Returns action for each given state"""
         preds, _ = self.session.run(
-            [self.softmax_predict, self.update_frames],
+            [self.predict_layer, self.update_frames],
             {self.input_layer: states})
+        noise = np.random.uniform(size=np.shape(preds))
         # return np.argmax(preds, axis=1)
-        return [np.random.choice(self.action_count, p=pred) for pred in preds]
+        return np.argmax(preds - np.log(-np.log(noise)), axis=1)
+        # return [np.random.choice(self.action_count, p=pred) for pred in preds]
 
     def value(self, states):
         """Returns predicted value for each given state"""
