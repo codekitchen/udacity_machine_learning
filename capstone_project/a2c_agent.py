@@ -82,8 +82,7 @@ class A2CAgent(BaseAgent):
                 tf.summary.scalar('predict_entropy', entropy)
                 trainer = tf.train.RMSPropOptimizer(
                     self.learning_rate, decay=0.99, epsilon=1e-5)
-                loss = diff_predict + self.value_weight * \
-                    mse_value - self.entropy_weight * entropy
+                loss = diff_predict + self.value_weight * mse_value - self.entropy_weight * entropy
                 tf.summary.scalar('loss', loss)
                 # self.train_op = trainer.minimize(loss, global_step=self._step)
                 grads_and_vars = trainer.compute_gradients(loss)
@@ -194,7 +193,7 @@ class A2CAgent(BaseAgent):
             # Clip rewards to {-1, 0, 1}
             # This is done here so that the EnvRecorder wrapper can still report the
             # real score rather than the clipped score.
-            reward = np.sign(reward)
+            # reward = np.sign(reward)
             self.rewards.append(reward)
             self.current_state = next_state
 
