@@ -45,6 +45,7 @@ class A2CAgent(BaseAgent):
                 self.softmax_predict = tf.nn.softmax(self.predict_layer)
                 self.value_layer = fully_connected(
                     final_layer, 1, activation=None, name="value")
+                self.value_layer_val = self.value_layer[:, 0]
             with tf.variable_scope('state'):
                 self._frames = tf.Variable(
                     0, trainable=False, name='frames', dtype=tf.int64)
@@ -61,21 +62,26 @@ class A2CAgent(BaseAgent):
                     tf.int32, shape=[None], name='target_predict')
                 self.target_value = tf.placeholder(
                     tf.float32, shape=[None], name='target_value')
-                mse_value = tf.reduce_mean(tf.squared_difference(self.value_layer, self.target_value)/2.)
+                self.reward_diff = tf.placeholder(
+                    tf.float32, shape=[None], name='reward_diff')
+                mse_value = tf.reduce_mean(tf.squared_difference(
+                    self.value_layer_val, self.target_value) / 2.)
                 tf.summary.scalar('mse_value', mse_value)
                 diff_predict = tf.reduce_mean(
-                    (self.target_value - self.value_layer) *
-                    tf.nn.sparse_softmax_cross_entropy_with_logits(
+                    self.reward_diff * tf.nn.sparse_softmax_cross_entropy_with_logits(
                         logits=self.predict_layer, labels=self.target_predict))
                 tf.summary.scalar('err_predict', diff_predict)
-                a0 = self.predict_layer - tf.reduce_max(self.predict_layer, axis=1, keep_dims=True)
+                a0 = self.predict_layer - \
+                    tf.reduce_max(self.predict_layer, axis=1, keep_dims=True)
                 ea0 = tf.exp(a0)
                 z0 = tf.reduce_sum(ea0, axis=1, keep_dims=True)
                 p0 = ea0 / z0
                 # entropy = tf.reduce_mean(-tf.reduce_sum(self.softmax_predict * tf.log( self.softmax_predict + 1e-6), axis=1))  # adding 1e-6 to avoid DBZ
-                entropy = tf.reduce_mean(tf.reduce_sum(p0 * (tf.log(z0) - a0), axis=1))
+                entropy = tf.reduce_mean(tf.reduce_sum(
+                    p0 * (tf.log(z0) - a0), axis=1))
                 tf.summary.scalar('predict_entropy', entropy)
-                trainer = tf.train.RMSPropOptimizer(self.learning_rate, decay=0.99, epsilon=1e-5)
+                trainer = tf.train.RMSPropOptimizer(
+                    self.learning_rate, decay=0.99, epsilon=1e-5)
                 loss = diff_predict + self.value_weight * \
                     mse_value - self.entropy_weight * entropy
                 tf.summary.scalar('loss', loss)
@@ -84,7 +90,8 @@ class A2CAgent(BaseAgent):
                 grads, vars = zip(*grads_and_vars)
                 grads, _ = tf.clip_by_global_norm(grads, 0.5)
                 grads_and_vars = list(zip(grads, vars))
-                self.train_op = trainer.apply_gradients(grads_and_vars, global_step=self._step)
+                self.train_op = trainer.apply_gradients(
+                    grads_and_vars, global_step=self._step)
 
             with tf.variable_scope('stats'):
                 self.score_placeholder = tf.placeholder(
@@ -126,12 +133,12 @@ class A2CAgent(BaseAgent):
 
     def act(self, states):
         """Returns action for each given state"""
-        preds, _ = self.session.run(
-            [self.predict_layer, self.update_frames],
+        preds, values, _ = self.session.run(
+            [self.predict_layer, self.value_layer_val, self.update_frames],
             {self.input_layer: states})
         noise = np.random.uniform(size=np.shape(preds))
         # return np.argmax(preds, axis=1)
-        return np.argmax(preds - np.log(-np.log(noise)), axis=1)
+        return np.argmax(preds - np.log(-np.log(noise)), axis=1), values
         # return [np.random.choice(self.action_count, p=pred) for pred in preds]
 
     def value(self, states):
@@ -139,12 +146,14 @@ class A2CAgent(BaseAgent):
         vals = self.session.run(self.value_layer, {self.input_layer: states})
         return np.squeeze(vals, axis=1)
 
-    def fit(self, states, actions, rewards):
+    def fit(self, states, actions, rewards, values):
+        diff = rewards - values
         _, summary, step = self.session.run(
             [self.train_op, self.summary_data, self._step],
             {self.input_layer: states,
              self.target_value: rewards,
-             self.target_predict: actions})
+             self.target_predict: actions,
+             self.reward_diff: diff})
 
         if step % 50 == 0:
             self.writer.add_summary(summary, step)
@@ -158,6 +167,7 @@ class A2CAgent(BaseAgent):
             self.states = []
             self.actions = []
             self.rewards = []
+            self.values = []
 
         @property
         def active(self):
@@ -167,6 +177,7 @@ class A2CAgent(BaseAgent):
             self.states.clear()
             self.actions.clear()
             self.rewards.clear()
+            self.values.clear()
             if self.reset:
                 self.current_state = self.env.reset()
                 self.reset = False
@@ -175,9 +186,10 @@ class A2CAgent(BaseAgent):
             if hasattr(self.env, 'async_step'):
                 self.env.async_step(action)
 
-        def step(self, action):
+        def step(self, action, value):
             self.states.append(self.current_state)
             self.actions.append(action)
+            self.values.append(value)
             next_state, reward, self.done, self.reset = self.env.step(action)
             # Clip rewards to {-1, 0, 1}
             # This is done here so that the EnvRecorder wrapper can still report the
@@ -198,6 +210,7 @@ class A2CAgent(BaseAgent):
             all_states = []
             all_actions = []
             all_rewards = []
+            all_values = []
 
             for env in run_envs:
                 env.prepare()
@@ -207,11 +220,11 @@ class A2CAgent(BaseAgent):
                 if len(envs) == 0:
                     break
                 states = [env.current_state for env in envs]
-                actions = self.act(states)
+                actions, values = self.act(states)
                 for env, action in zip(envs, actions):
                     env.async_step(action)
-                for env, action in zip(envs, actions):
-                    env.step(action)
+                for env, action, value in zip(envs, actions, values):
+                    env.step(action, value)
             values = self.value([env.current_state for env in run_envs])
             for env, value in zip(run_envs, values):
                 total_rewards = [0] * len(env.rewards)
@@ -224,9 +237,10 @@ class A2CAgent(BaseAgent):
                 assert len(env.states) == len(total_rewards)
                 all_states += env.states
                 all_actions += env.actions
+                all_values += env.values
                 all_rewards += total_rewards
 
-            self.fit(all_states, all_actions, all_rewards)
+            self.fit(all_states, all_actions, np.array(all_rewards), np.array(all_values))
 
         for env in self.envs:
             env.close()
