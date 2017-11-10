@@ -65,7 +65,7 @@ class A2CAgent(BaseAgent):
                 self.reward_diff = tf.placeholder(
                     tf.float32, shape=[None], name='reward_diff')
                 mse_value = tf.reduce_mean(tf.squared_difference(
-                    self.value_layer_val, self.target_value) / 2.)
+                    self.value_layer, self.target_value) / 2.)
                 tf.summary.scalar('mse_value', mse_value)
                 diff_predict = tf.reduce_mean(
                     self.reward_diff * tf.nn.sparse_softmax_cross_entropy_with_logits(
@@ -134,12 +134,12 @@ class A2CAgent(BaseAgent):
     def act(self, states):
         """Returns action for each given state"""
         preds, values, _ = self.session.run(
-            [self.predict_layer, self.value_layer_val, self.update_frames],
+            [self.softmax_predict, self.value_layer_val, self.update_frames],
             {self.input_layer: states})
-        noise = np.random.uniform(size=np.shape(preds))
+        # noise = np.random.uniform(size=np.shape(preds))
         # return np.argmax(preds, axis=1)
-        return np.argmax(preds - np.log(-np.log(noise)), axis=1), values
-        # return [np.random.choice(self.action_count, p=pred) for pred in preds]
+        # return np.argmax(preds - np.log(-np.log(noise)), axis=1), values
+        return [np.random.choice(self.action_count, p=pred) for pred in preds], values
 
     def value(self, states):
         """Returns predicted value for each given state"""
