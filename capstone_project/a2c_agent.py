@@ -54,8 +54,8 @@ class A2CAgent(BaseAgent):
                                                    tf.cast(tf.shape(self.input_layer)[0], tf.int64))
                 lr_calc = self.starting_lr * \
                     (1.0 - (tf.cast(self._frames, tf.float64) / self.total_steps))
-                self.learning_rate = tf.maximum(
-                    tf.cast(0.0, tf.float64), lr_calc)
+                # self.learning_rate = tf.maximum(tf.cast(0.0, tf.float64), lr_calc)
+                self.learning_rate = tf.constant(self.starting_lr)
                 tf.summary.scalar('learning_rate', self.learning_rate)
             with tf.variable_scope('training'):
                 self.target_predict = tf.placeholder(
